@@ -405,7 +405,7 @@ def sign_in():
 
     email_field.send_keys(args.username)
     password_field.send_keys(args.password)
-    submit_btn.click()
+    submit_btn.send_keys("\n")
 
     time.sleep(3)
     browser.get(args.url)
