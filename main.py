@@ -65,6 +65,16 @@ parser.add_argument(
     Only use this option with --start_from_url.\
     You also must have sorted Glassdoor reviews DESCENDING by date.',
     type=lambda s: dt.datetime.strptime(s, "%Y-%m-%d"))
+parser.add_argument(
+    '--search_type', help = 'Whether to scrape reviews or search for companies.\
+    Accepts arguments: companies or reviews.\
+    --max_date and --min_date are ignored if companies selected.',
+    choices=['reviews', 'companies'],
+    default="reviews"
+)
+parser.add_argument(
+    '--search_company_name', help = 'Company name to search.'
+)
 args = parser.parse_args()
 
 if not args.start_from_url and (args.max_date or args.min_date):
@@ -391,6 +401,72 @@ def navigate_to_reviews():
     return True
 
 
+
+def scrape_company_url(listing):
+    try:
+        company_url = listing.find_element_by_class_name('tightAll').get_attribute('href')
+        return company_url
+    except:
+        return np.nan
+
+
+def scrape_company_name(listing):
+    try:
+        company_name = listing.find_element_by_class_name('tightAll').text
+        return  company_name
+    except:
+        return np.nan
+
+
+def scrape_company_webpage(listing):
+    try:
+        company_webpage = listing.find_element_by_class_name('url').get_attribute('innerHTML')
+        return company_webpage
+    except:
+        return np.nan
+
+def scrape_company_HQ(listing):
+    try:
+        company_HQ = listing.find_element_by_class_name('hqInfo.adr').find_elements_by_tag_name("span")[0].get_attribute("innerHTML")
+        return company_HQ
+    except:
+        return np.nan
+
+
+
+
+
+
+def search_for_company():
+    logger.info('Searching For company')
+    search_box = browser.find_element_by_css_selector("#sc\.keyword")
+    type_box = browser.find_element_by_xpath('/html/body/header/div[2]/div[2]/form/div/ul/li[2]')
+    location_box = browser.find_element_by_css_selector('#sc\.location')
+    search_button = browser.find_element_by_css_selector('#HeroSearchButton') 
+
+    search_box.clear()
+    search_box.send_keys(args.search_company_name)
+    location_box.send_keys("")
+    type_box.click()
+    search_button.click()
+
+    #import pdb;pdb.set_trace()
+ 
+    company_data = pd.DataFrame([], columns = ["company_url", "company_name", "company_webpage", "company_HQ", "search_rank"])
+
+    company_listings = browser.find_elements_by_css_selector('div.eiHdrModule')                        
+    for listing in company_listings[0:args.limit]:
+        company_url = scrape_company_url(listing)
+        company_name = scrape_company_name(listing)
+        company_webpage = scrape_company_webpage(listing)
+        company_HQ = scrape_company_HQ(listing)
+        company_data.loc[idx[0]] = [company_url, company_name, company_webpage, company_HQ, idx[0]]
+        idx[0] = idx[0] + 1
+
+    return company_data
+
+
+
 def sign_in():
     logger.info(f'Signing in to {args.username}')
 
@@ -449,47 +525,46 @@ def verify_date_sorting():
             'max_date requires reviews to be sorted ASCENDING by date.')
 
 
-browser = get_browser()
-page = [1]
-idx = [0]
-date_limit_reached = [False]
+
 
 
 def main():
 
-    logger.info(f'Scraping up to {args.limit} reviews.')
+    logger.info(f'Scraping up to {args.limit} companies/reviews.')
 
-    res = pd.DataFrame([], columns=SCHEMA)
 
     sign_in()
-
-    if not args.start_from_url:
-        reviews_exist = navigate_to_reviews()
-        if not reviews_exist:
-            return
-    elif args.max_date or args.min_date:
-        verify_date_sorting()
-        browser.get(args.url)
-        page[0] = get_current_page()
-        logger.info(f'Starting from page {page[0]:,}.')
-        time.sleep(1)
+    if args.search_type == "companies":
+        res = search_for_company()
     else:
-        browser.get(args.url)
-        page[0] = get_current_page()
-        logger.info(f'Starting from page {page[0]:,}.')
-        time.sleep(1)
+        res = pd.DataFrame([], columns=SCHEMA)
+        if not args.start_from_url:
+            reviews_exist = navigate_to_reviews()
+            if not reviews_exist:
+                return
+        elif args.max_date or args.min_date:
+            verify_date_sorting()
+            browser.get(args.url)
+            page[0] = get_current_page()
+            logger.info(f'Starting from page {page[0]:,}.')
+            time.sleep(1)
+        else:
+            browser.get(args.url)
+            page[0] = get_current_page()
+            logger.info(f'Starting from page {page[0]:,}.')
+            time.sleep(1)
 
-    reviews_df = extract_from_page()
-    res = res.append(reviews_df)
-
-    # import pdb;pdb.set_trace()
-
-    while more_pages() and\
-            len(res) + 1 < args.limit and\
-            not date_limit_reached[0]:
-        go_to_next_page()
         reviews_df = extract_from_page()
         res = res.append(reviews_df)
+
+        # import pdb;pdb.set_trace()
+
+        while more_pages() and\
+                len(res) + 1 < args.limit and\
+                not date_limit_reached[0]:
+            go_to_next_page()
+            reviews_df = extract_from_page()
+            res = res.append(reviews_df)
 
     logger.info(f'Writing {len(res)} reviews to file {args.file}')
     res.to_csv(args.file, index=False, encoding='utf-8')
@@ -499,4 +574,8 @@ def main():
 
 
 if __name__ == '__main__':
+    browser = get_browser()
+    page = [1]
+    idx = [0]
+    date_limit_reached = [False]
     main()
