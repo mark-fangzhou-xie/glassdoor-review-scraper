@@ -28,6 +28,7 @@ ENV PATH $CHROMEDRIVER_DIR:$PATH
 COPY requirements.txt /tmp/
 COPY . /home/jovyan/work/
 
+RUN chown $NB_UID work
 RUN pip install --requirement /tmp/requirements.txt && \
     fix-permissions $CONDA_DIR && \
     fix-permissions /home/$NB_USER
