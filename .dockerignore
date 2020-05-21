@@ -1,5 +1,5 @@
 # Ignore everything
-**
+secret.json
 
 # Allow files and directories
 !Dockerfile
