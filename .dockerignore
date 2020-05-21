@@ -1,7 +1,6 @@
-# Ignore everything
 secret.json
 
 # Allow files and directories
-!Dockerfile
-!install.R
-!requirements.txt
+#!Dockerfile
+#!install.R
+#!requirements.txt
