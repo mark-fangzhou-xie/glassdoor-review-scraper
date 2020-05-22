@@ -34,6 +34,7 @@ from schema import SCHEMA
 import json
 import urllib
 import datetime as dt
+import re
 
 start = time.time()
 
@@ -73,7 +74,8 @@ parser.add_argument(
     default="reviews"
 )
 parser.add_argument(
-    '--search_company_name', help = 'Company name to search.'
+    '--search_company_names', help = 'Company names to search.',
+    nargs='+'
 )
 args = parser.parse_args()
 
@@ -433,38 +435,73 @@ def scrape_company_HQ(listing):
         return np.nan
 
 
+def scrape_n_total_reviews(listing):
+    try:
+        n_reviews = listing.find_element_by_class_name("eiCell.cell.reviews").find_element_by_class_name("num").text
+        return n_reviews
+    except: np.nan
 
 
-
-
-def search_for_company():
-    logger.info('Searching For company')
-    search_box = browser.find_element_by_css_selector("#sc\.keyword")
+def search_for_company(company_name_to_search):
+    logger.info(f'Searching for company: {company_name_to_search}')
+    search_box = browser.find_element_by_css_selector(r"#sc\.keyword")
     type_box = browser.find_element_by_xpath('/html/body/header/div[2]/div[2]/form/div/ul/li[2]')
-    location_box = browser.find_element_by_css_selector('#sc\.location')
+    location_box = browser.find_element_by_css_selector(r'#sc\.location')
     search_button = browser.find_element_by_css_selector('#HeroSearchButton') 
 
     search_box.clear()
-    search_box.send_keys(args.search_company_name)
+    search_box.send_keys(company_name_to_search)
     location_box.send_keys("")
     type_box.click()
     search_button.click()
 
     #import pdb;pdb.set_trace()
  
-    company_data = pd.DataFrame([], columns = ["company_url", "company_name", "company_webpage", "company_HQ", "search_rank"])
-
-    company_listings = browser.find_elements_by_css_selector('div.eiHdrModule')                        
-    for listing in company_listings[0:args.limit]:
-        company_url = scrape_company_url(listing)
-        company_name = scrape_company_name(listing)
-        company_webpage = scrape_company_webpage(listing)
-        company_HQ = scrape_company_HQ(listing)
-        company_data.loc[idx[0]] = [company_url, company_name, company_webpage, company_HQ, idx[0]]
-        idx[0] = idx[0] + 1
-
+    company_data = pd.DataFrame([], columns = [ "company_name_to_search",
+                                                "company_url",
+                                                "company_name",
+                                                "company_webpage",
+                                                "company_HQ",
+                                                "search_rank",
+                                                "n_reviews"])
+    
+    # Checking if we've been re-directed to a company page
+    pattern = re.compile("reviews")
+    if pattern.search(browser.current_url):
+        company_listings = browser.find_elements_by_css_selector('div.eiHdrModule')
+        for listing in company_listings[0:args.limit]:
+            company_url = scrape_company_url(listing)
+            company_name = scrape_company_name(listing)
+            company_webpage = scrape_company_webpage(listing)
+            company_HQ = scrape_company_HQ(listing)
+            n_reviews = scrape_n_total_reviews(listing)
+            company_data.loc[idx[0]] = [
+                company_name_to_search,
+                company_url,
+                company_name,
+                company_webpage,
+                company_HQ,
+                idx[0],
+                n_reviews
+                ]
+            idx[0] = idx[0] + 1
+    else:
+        # These aren't so robust
+        company_url = browser.find_element_by_css_selector('#EmpHero').get_attribute("data-employer-id")
+        company_name = browser.find_element_by_css_selector('.header').find_element_by_tag_name('h1').text
+        company_webpage = browser.find_element_by_css_selector('.website').text
+        company_HQ = browser.find_element_by_css_selector("div.infoEntity:nth-child(2) > span:nth-child(2)").text
+        n_reviews = scrape_n_total_reviews(browser)
+        company_data.loc[idx[0]] = [
+            company_name_to_search,
+            company_url,
+            company_name,
+            company_webpage,
+            company_HQ,
+            idx[0],
+            n_reviews
+        ]
     return company_data
-
 
 
 def sign_in():
@@ -535,7 +572,18 @@ def main():
 
     sign_in()
     if args.search_type == "companies":
-        res = search_for_company()
+        res = pd.DataFrame([], columns = [ "company_name_to_search",
+                                                "company_url",
+                                                "company_name",
+                                                "company_webpage",
+                                                "company_HQ",
+                                                "search_rank",
+                                                "n_reviews"] )
+
+        for company_to_search in args.search_company_names:
+            companies_df = search_for_company(company_to_search)
+            res = res.append(companies_df)
+            time.sleep(3)
     else:
         res = pd.DataFrame([], columns=SCHEMA)
         if not args.start_from_url:
