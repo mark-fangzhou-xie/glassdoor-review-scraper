@@ -12,7 +12,7 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key
 	apt-get install -y google-chrome-stable
 	
 
-ENV CHROMEDRIVER_VERSION=81.0.4044.138
+ENV CHROMEDRIVER_VERSION=83.0.4103.61 
 ENV CHROMEDRIVER_DIR=/chromedriver
 RUN mkdir -p $CHROMEDRIVER_DIR
 
