@@ -12,14 +12,13 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key
 	apt-get install -y google-chrome-stable
 	
 
-ENV CHROMEDRIVER_VERSION=83.0.4103.61 
+ENV CHROMEDRIVER_VERSION=83.0.4103.39 
 ENV CHROMEDRIVER_DIR=/chromedriver
 RUN mkdir -p $CHROMEDRIVER_DIR
 
 # Download and install Chromedriver
 RUN wget -q --continue -P $CHROMEDRIVER_DIR "http://chromedriver.storage.googleapis.com/$CHROMEDRIVER_VERSION/chromedriver_linux64.zip"
 RUN unzip $CHROMEDRIVER_DIR/chromedriver* -d $CHROMEDRIVER_DIR
-
 RUN chmod +x $CHROMEDRIVER_DIR/chromedriver
 
 # Put Chromedriver into the PATH
