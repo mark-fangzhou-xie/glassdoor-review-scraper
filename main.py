@@ -581,9 +581,14 @@ def main():
                                                 "n_reviews"] )
         res.to_csv(args.file, index = False, encoding='utf-8')
         for company_to_search in args.search_company_names:
-            companies_df = search_for_company(company_to_search)
+            try:
+                companies_df = search_for_company(company_to_search)
+            except:
+                companies_df = res
+
             companies_df.to_csv(args.file,  index=False, encoding='utf-8', mode='a', header=False)
             time.sleep(3)
+
     else:
         res = pd.DataFrame([], columns=SCHEMA)
         if not args.start_from_url:
