@@ -579,10 +579,10 @@ def main():
                                                 "company_HQ",
                                                 "search_rank",
                                                 "n_reviews"] )
-
+        res.to_csv(args.file, index = False, encoding='utf-8')
         for company_to_search in args.search_company_names:
             companies_df = search_for_company(company_to_search)
-            res = res.append(companies_df)
+            companies_df.to_csv(args.file,  index=False, encoding='utf-8', mode='a', header=False)
             time.sleep(3)
     else:
         res = pd.DataFrame([], columns=SCHEMA)
@@ -613,9 +613,9 @@ def main():
             go_to_next_page()
             reviews_df = extract_from_page()
             res = res.append(reviews_df)
-
-    logger.info(f'Writing {len(res)} reviews to file {args.file}')
-    res.to_csv(args.file, index=False, encoding='utf-8')
+        logger.info(f'Writing {len(res)} reviews to file {args.file}')
+        res.to_csv(args.file, index=False, encoding='utf-8')
+    
 
     end = time.time()
     logger.info(f'Finished in {end - start} seconds')
