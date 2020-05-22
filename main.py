@@ -597,7 +597,7 @@ def main():
                 
 
             companies_df.to_csv(args.file,  index=False, encoding='utf-8', mode='a', header=False)
-            time.sleep(3)
+            time.sleep(30)
 
     else:
         res = pd.DataFrame([], columns=SCHEMA)
