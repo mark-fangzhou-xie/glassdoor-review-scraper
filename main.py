@@ -349,9 +349,9 @@ def extract_from_page():
         idx[0] = idx[0] + 1
 
     if args.max_date and \
-        (pd.to_datetime(res['date']).max() > args.max_date) or \
+        (pd.to_datetime(res['date'].str.replace(r'\d{2}:\d{2}:\d{2}.*$', '')).max() > args.max_date) or \
             args.min_date and \
-            (pd.to_datetime(res['date']).min() < args.min_date):
+            (pd.to_datetime(res['date'].str.replace(r'\d{2}:\d{2}:\d{2}.*$', '')).min() < args.min_date):
         logger.info('Date limit reached, ending process')
         date_limit_reached[0] = True
 
@@ -539,13 +539,12 @@ def get_browser():
 
 def get_current_page():
     logger.info('Getting current page number')
-    paging_control = browser.find_element_by_class_name('pagingControls')
-    current = int(paging_control.find_element_by_xpath(
-        '//ul//li[contains\
-        (concat(\' \',normalize-space(@class),\' \'),\' current \')]\
-        //span[contains(concat(\' \',\
-        normalize-space(@class),\' \'),\' disabled \')]')
-        .text.replace(',', ''))
+    page_number_elements = browser.find_element_by_css_selector(".eiReviews__EIReviewsPageStyles__pagination").find_elements_by_css_selector("li.pagination__PaginationStyle__page")
+
+
+    for element in page_number_elements:
+        if element.get_attribute('class') == "pagination__PaginationStyle__page pagination__PaginationStyle__current":
+            current = int(element.text)
     return current
 
 
@@ -560,8 +559,6 @@ def verify_date_sorting():
     elif args.max_date and not ascending:
         raise Exception(
             'max_date requires reviews to be sorted ASCENDING by date.')
-
-
 
 
 
