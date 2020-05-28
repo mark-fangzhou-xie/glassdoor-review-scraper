@@ -17,7 +17,7 @@ import pandas as pd
 page_df = pd.read_csv("data/scrape-glassdoor-urls.csv")
 
 for index, row in page_df.iterrows():
-    command = 'python main.py --headless --limit 999999 --min_date 2019-09-01 --start_from_url  --url "' + row["webpage_to_scrape_reviews"] + '" -f ' + str(row["gvkey"]) + '.csv'
+    command = 'python main.py --headless --credentials data/secret.json --limit 999999 --min_date 2019-09-01 --start_from_url  --url "' + row["webpage_to_scrape_reviews"] + '" -f ' + str(row["gvkey"]) + '.csv'
 
     print(command)
     os.system(command)
