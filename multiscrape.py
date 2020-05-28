@@ -14,7 +14,7 @@ each Item in the tuple is a string, hence it will need to be enclosed in quotes.
 import os
 import pandas as pd
 
-page_df = pd.read_csv("scrape-glassdoor-urls.csv")
+page_df = pd.read_csv("data/scrape-glassdoor-urls.csv")
 
 for index, row in page_df.iterrows():
     command = 'python main.py --headless --limit 999999 --min_date 2019-09-01 --start_from_url  --url "' + row["webpage_to_scrape_reviews"] + '" -f ' + str(row["gvkey"]) + '.csv'
