@@ -23,7 +23,6 @@ subset_page_df = page_df[~page_df["gvkey"].isin(already_scraped_keys)]
 
 for index, row in subset_page_df.iterrows():
     command = 'python main.py --headless --credentials data/secret.json --limit 999999 --min_date 2019-09-01 --start_from_url  --url "' + row["webpage_to_scrape_reviews"] + '" -f data/' + str(row["gvkey"]) + '.csv'
-
     print(command)
     os.system(command)
-    time.sleep(30)
+    time.sleep(60*5)
