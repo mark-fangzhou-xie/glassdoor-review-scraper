@@ -354,6 +354,11 @@ def extract_from_page():
             (pd.to_datetime(res['date'].str.replace(r'\d{2}:\d{2}:\d{2}.*$', '')).min() < args.min_date):
         logger.info('Date limit reached, ending process')
         date_limit_reached[0] = True
+    # Ending if # reviews on this page is 0
+    if len(reviews) == 0:
+        logger.info('No reviews found, ending process')
+        date_limit_reached[0] = True
+
 
     return res
 
@@ -527,6 +532,7 @@ def sign_in():
 
 def get_browser():
     logger.info('Configuring browser')
+    logger.info(f'Scraping {args.url}')
     chrome_options = wd.ChromeOptions()
     if args.headless:
         chrome_options.add_argument('--headless')
