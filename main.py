@@ -634,8 +634,11 @@ def main():
 
 
 if __name__ == '__main__':
-    browser = get_browser()
-    page = [1]
-    idx = [0]
-    date_limit_reached = [False]
-    main()
+    try:
+        browser = get_browser()
+        page = [1]
+        idx = [0]
+        date_limit_reached = [False]
+        main()
+    except:
+        browser.quit()    
