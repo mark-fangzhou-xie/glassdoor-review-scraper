@@ -545,12 +545,15 @@ def get_browser():
 
 def get_current_page():
     logger.info('Getting current page number')
-    page_number_elements = browser.find_element_by_css_selector(".eiReviews__EIReviewsPageStyles__pagination").find_elements_by_css_selector("li.pagination__PaginationStyle__page")
+    try:
+        page_number_elements = browser.find_element_by_css_selector(".eiReviews__EIReviewsPageStyles__pagination").find_elements_by_css_selector("li.pagination__PaginationStyle__page")
 
 
-    for element in page_number_elements:
-        if element.get_attribute('class') == "pagination__PaginationStyle__page pagination__PaginationStyle__current":
-            current = int(element.text)
+        for element in page_number_elements:
+            if element.get_attribute('class') == "pagination__PaginationStyle__page pagination__PaginationStyle__current":
+                current = int(element.text)
+    except selenium.common.exceptions.NoSuchElementException:
+        current = 1 # only one page if page numbers at bottom of page
     return current
 
 
