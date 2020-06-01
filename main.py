@@ -639,6 +639,7 @@ def main():
     
 
     end = time.time()
+    browser.quit()
     logger.info(f'Finished in {end - start} seconds')
 
 
