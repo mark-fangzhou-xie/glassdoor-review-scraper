@@ -4,3 +4,8 @@ debug.log
 design.txt
 *.csv
 *.json
+*.sqlite
+
+.DS_Store
+
+./tmp

@@ -20,21 +20,32 @@ Advice to mgmttext
 Ratings for each of 5 categories
 Overall rating
 '''
-
-import time
-import pandas as pd
-from argparse import ArgumentParser
 import argparse
+import datetime as dt
+import json
 import logging
 import logging.config
-from selenium import webdriver as wd
-import selenium
-import numpy as np
-from schema import SCHEMA
-import json
-import urllib
-import datetime as dt
+import os
+import pdb
 import re
+import sqlite3 as lite
+import time
+import traceback
+import urllib
+from argparse import ArgumentParser
+from random import uniform
+
+import numpy as np
+import pandas as pd
+import selenium
+from selenium import webdriver as wd
+from selenium.common.exceptions import (NoSuchElementException,
+                                        StaleElementReferenceException)
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+
+from schema import SCHEMA
 
 start = time.time()
 
@@ -67,14 +78,20 @@ parser.add_argument(
     You also must have sorted Glassdoor reviews DESCENDING by date.',
     type=lambda s: dt.datetime.strptime(s, "%Y-%m-%d"))
 parser.add_argument(
-    '--search_type', help = 'Whether to scrape reviews or search for companies.\
+    '--search_type', help='Whether to scrape reviews or search for companies.\
     Accepts arguments: companies or reviews.\
     --max_date and --min_date are ignored if companies selected.',
     choices=['reviews', 'companies'],
-    default="reviews"
+    default='companies'
 )
 parser.add_argument(
-    '--search_company_names', help = 'Company names to search.',
+    '--search_company_names', help='Company names to search.',
+    nargs='+'
+)
+parser.add_argument(
+    '--loop_education',
+    help='Loop over all companies in education sector.',
+    default=False,
     nargs='+'
 )
 args = parser.parse_args()
@@ -169,7 +186,8 @@ def scrape(field, review, author):
 
     def scrape_helpful(review):
         try:
-            helpful = review.find_element_by_class_name('helpfulCount').text.replace('"','')
+            helpful = review.find_element_by_class_name(
+                'helpfulCount').text.replace('"', '')
             res = helpful[helpful.find('(') + 1: -1]
         except Exception:
             res = 0
@@ -178,14 +196,16 @@ def scrape(field, review, author):
     def expand_show_more(section):
         try:
             # more_content = section.find_element_by_class_name('moreContent')
-            more_link = section.find_element_by_class_name('v2__EIReviewDetailsV2__continueReading')
+            more_link = section.find_element_by_class_name(
+                'v2__EIReviewDetailsV2__continueReading')
             more_link.click()
         except Exception:
             pass
 
     def scrape_pros(review):
         try:
-            pros = review.find_element_by_class_name('v2__EIReviewDetailsV2__fullWidth')
+            pros = review.find_element_by_class_name(
+                'v2__EIReviewDetailsV2__fullWidth')
             expand_show_more(pros)
             res = pros.text.replace('Pros', '')
             res = res.strip()
@@ -195,7 +215,8 @@ def scrape(field, review, author):
 
     def scrape_cons(review):
         try:
-            cons = review.find_elements_by_class_name('v2__EIReviewDetailsV2__fullWidth')[1]
+            cons = review.find_elements_by_class_name(
+                'v2__EIReviewDetailsV2__fullWidth')[1]
             expand_show_more(cons)
             res = cons.text.replace('Cons', '')
             res = res.strip()
@@ -205,7 +226,8 @@ def scrape(field, review, author):
 
     def scrape_advice(review):
         try:
-            advice = review.find_elements_by_class_name('v2__EIReviewDetailsV2__fullWidth')[2]
+            advice = review.find_elements_by_class_name(
+                'v2__EIReviewDetailsV2__fullWidth')[2]
             res = advice.text.replace('Advice to Management', '')
             res = res.strip()
         except Exception:
@@ -249,7 +271,6 @@ def scrape(field, review, author):
     def scrape_senior_management(review):
         return _scrape_subrating(4)
 
-
     def scrape_recommends(review):
         try:
             res = review.find_element_by_class_name('recommends').text
@@ -257,7 +278,7 @@ def scrape(field, review, author):
             return res[0]
         except:
             return np.nan
-    
+
     def scrape_outlook(review):
         try:
             res = review.find_element_by_class_name('recommends').text
@@ -269,7 +290,7 @@ def scrape(field, review, author):
             return np.nan
         except:
             return np.nan
-    
+
     def scrape_approve_ceo(review):
         try:
             res = review.find_element_by_class_name('recommends').text
@@ -282,7 +303,6 @@ def scrape(field, review, author):
             return np.nan
         except:
             return np.nan
-
 
     funcs = [
         scrape_date,
@@ -359,14 +379,14 @@ def extract_from_page():
         logger.info('No reviews found, ending process')
         date_limit_reached[0] = True
 
-
     return res
 
 
 def more_pages():
     try:
         # paging_control = browser.find_element_by_class_name('pagingControls')
-        next_ = browser.find_element_by_class_name('pagination__PaginationStyle__next')
+        next_ = browser.find_element_by_class_name(
+            'pagination__PaginationStyle__next')
         next_.find_element_by_tag_name('a')
         return True
     except selenium.common.exceptions.NoSuchElementException:
@@ -401,17 +421,17 @@ def navigate_to_reviews():
     reviews_cell = browser.find_element_by_xpath(
         '//a[@data-label="Reviews"]')
     reviews_path = reviews_cell.get_attribute('href')
-    
+
     # reviews_path = driver.current_url.replace('Overview','Reviews')
     browser.get(reviews_path)
     time.sleep(1)
     return True
 
 
-
 def scrape_company_url(listing):
     try:
-        company_url = listing.find_element_by_class_name('tightAll').get_attribute('href')
+        company_url = listing.find_element_by_class_name(
+            'tightAll').get_attribute('href')
         return company_url
     except:
         return np.nan
@@ -420,21 +440,24 @@ def scrape_company_url(listing):
 def scrape_company_name(listing):
     try:
         company_name = listing.find_element_by_class_name('tightAll').text
-        return  company_name
+        return company_name
     except:
         return np.nan
 
 
 def scrape_company_webpage(listing):
     try:
-        company_webpage = listing.find_element_by_class_name('url').get_attribute('innerHTML')
+        company_webpage = listing.find_element_by_class_name(
+            'url').get_attribute('innerHTML')
         return company_webpage
     except:
         return np.nan
 
+
 def scrape_company_HQ(listing):
     try:
-        company_HQ = listing.find_element_by_class_name('hqInfo.adr').find_elements_by_tag_name("span")[0].get_attribute("innerHTML")
+        company_HQ = listing.find_element_by_class_name(
+            'hqInfo.adr').find_elements_by_tag_name("span")[0].get_attribute("innerHTML")
         return company_HQ
     except:
         return np.nan
@@ -442,17 +465,20 @@ def scrape_company_HQ(listing):
 
 def scrape_n_total_reviews(listing):
     try:
-        n_reviews = listing.find_element_by_class_name("eiCell.cell.reviews").find_element_by_class_name("num").text
+        n_reviews = listing.find_element_by_class_name(
+            "eiCell.cell.reviews").find_element_by_class_name("num").text
         return n_reviews
-    except: np.nan
+    except:
+        np.nan
 
 
 def search_for_company(company_name_to_search):
     logger.info(f'Searching for company: {company_name_to_search}')
     search_box = browser.find_element_by_css_selector(r"#sc\.keyword")
-    type_box = browser.find_element_by_xpath('/html/body/header/div[2]/div[2]/form/div/ul/li[2]')
+    type_box = browser.find_element_by_xpath(
+        '/html/body/header/div[2]/div[2]/form/div/ul/li[2]')
     location_box = browser.find_element_by_css_selector(r'#sc\.location')
-    search_button = browser.find_element_by_css_selector('#HeroSearchButton') 
+    search_button = browser.find_element_by_css_selector('#HeroSearchButton')
 
     search_box.clear()
     search_box.send_keys(company_name_to_search)
@@ -461,19 +487,20 @@ def search_for_company(company_name_to_search):
     search_button.click()
 
     #import pdb;pdb.set_trace()
- 
-    company_data = pd.DataFrame([], columns = [ "company_name_to_search",
-                                                "company_url",
-                                                "company_name",
-                                                "company_webpage",
-                                                "company_HQ",
-                                                "search_rank",
-                                                "n_reviews"])
-    
+
+    company_data = pd.DataFrame([], columns=["company_name_to_search",
+                                             "company_url",
+                                             "company_name",
+                                             "company_webpage",
+                                             "company_HQ",
+                                             "search_rank",
+                                             "n_reviews"])
+
     # Checking if we've been re-directed to a company page
     pattern = re.compile("reviews")
     if pattern.search(browser.current_url):
-        company_listings = browser.find_elements_by_css_selector('div.eiHdrModule')
+        company_listings = browser.find_elements_by_css_selector(
+            'div.eiHdrModule')
         for listing in company_listings[0:args.limit]:
             company_url = scrape_company_url(listing)
             company_name = scrape_company_name(listing)
@@ -488,14 +515,17 @@ def search_for_company(company_name_to_search):
                 company_HQ,
                 idx[0],
                 n_reviews
-                ]
+            ]
             idx[0] = idx[0] + 1
     else:
         # These aren't so robust
-        company_url = browser.find_element_by_css_selector('#EmpHero').get_attribute("data-employer-id")
-        company_name = browser.find_element_by_css_selector('.header').find_element_by_tag_name('h1').text
+        company_url = browser.find_element_by_css_selector(
+            '#EmpHero').get_attribute("data-employer-id")
+        company_name = browser.find_element_by_css_selector(
+            '.header').find_element_by_tag_name('h1').text
         company_webpage = browser.find_element_by_css_selector('.website').text
-        company_HQ = browser.find_element_by_css_selector("div.infoEntity:nth-child(2) > span:nth-child(2)").text
+        company_HQ = browser.find_element_by_css_selector(
+            "div.infoEntity:nth-child(2) > span:nth-child(2)").text
         n_reviews = scrape_n_total_reviews(browser)
         company_data.loc[idx[0]] = [
             company_name_to_search,
@@ -507,6 +537,179 @@ def search_for_company(company_name_to_search):
             n_reviews
         ]
     return company_data
+
+
+def write_scraped_to_db(args, dbname='education_sector.sqlite'):
+    conn = lite.connect(dbname)
+    c = conn.cursor()
+    c.execute("""CREATE TABLE IF NOT EXISTS `education` (
+    icon_link TEXT,
+    review_link TEXT,
+    company_name TEXT,
+    ratings TEXT,
+    reviews TEXT,
+    salaries TEXT,
+    jobs TEXT,
+    location TEXT,
+    company_size TEXT,
+    industry TEXT,
+    description TEXT,
+    PRIMARY KEY (icon_link, company_name)
+    -- page INT -- record page number just in case it fails in the middle
+    );""")
+    conn.commit()
+
+    c.executemany("""INSERT OR IGNORE INTO `education`
+    VALUES (?,?,?,?,?,?,?,?,?,?,?);""", args)
+    conn.commit()
+
+
+def loop_education():
+    "loop over the whole education sector and get their GD id"
+
+    def scrape_item(listing, xpath, attr=None):
+        "generic function on getting item within a listing"
+        try:
+            if attr:
+                item = listing.find_element_by_xpath(xpath).get_attribute(attr)
+            else:
+                item = listing.find_element_by_xpath(xpath).text
+            return item
+        except NoSuchElementException:
+            # traceback.print_exc(e)
+            return None
+
+    def scrape_listing(listing):
+        icon_link = scrape_item(listing,
+                                ".//img[@data-test='employer-logo']",
+                                attr='src')
+        company_name = scrape_item(listing,
+                                   ".//h2[@data-test='employer-short-name']")
+        ratings = scrape_item(listing, ".//span[@data-test='rating']")
+        # pdb.set_trace()
+        review = listing.find_element_by_xpath(
+            ".//div[@data-test='cell-Reviews']")
+        reviews = scrape_item(
+            review, ".//div[@data-test='cell-Reviews-count']")
+        review_link = scrape_item(
+            review, ".//a[@data-test='cell-Reviews-url']", attr='href')
+        # pdb.set_trace()
+        salaries = scrape_item(listing,
+                               ".//div[@data-test='cell-Salaries-count']")
+        jobs = scrape_item(listing, ".//div[@data-test='cell-Jobs-count']")
+        location = scrape_item(listing,
+                               ".//span[@data-test='employer-location']")
+        company_size = scrape_item(listing,
+                                   ".//span[@data-test='employer-size']")
+        industry = scrape_item(listing,
+                               ".//span[@data-test='employer-industry']")
+        description = scrape_item(listing,
+                                  ".//p[@class='employerCard__EmployerCardStyles__clamp common__commonStyles__subtleText']")
+        # page
+        logger.info(company_name)
+        arg = (icon_link, review_link, company_name,
+               ratings, reviews, salaries,
+               jobs, location, company_size,
+               industry, description)
+        return arg
+
+    ignored_exceptions = (NoSuchElementException,
+                          StaleElementReferenceException,)
+
+    logger.info('getting education')
+    # loop over education sector
+    browser.get(
+        'https://www.glassdoor.com/Explore/browse-companies.htm'
+        '?overall_rating_low=0&page=1&isHiringSurge=0&sgoc=1006'
+    )
+    WebDriverWait(browser, 10, ignored_exceptions=ignored_exceptions).until(
+        EC.presence_of_element_located(
+            (By.XPATH,
+             "//*[contains(@class, 'col-md-8')]//div[@data-test='cell-Reviews-count']")
+        )
+    )
+
+    # time.sleep(2)
+    # break_signal = False
+
+    # page = 1
+    # add for loop over company size
+
+    for i in range(7):
+        radio_buttons = browser.find_elements_by_xpath(
+            "//div[@class='radioButtonBox']")
+        radio_buttons[i].click()
+        # WebDriverWait(browser, 10, ignored_exceptions=ignored_exceptions).until(
+        #     EC.presence_of_element_located(
+        #         (By.XPATH,
+        #          "//*[contains(@class, 'col-md-8')]//div[@data-test='cell-Reviews-count']")
+        #     )
+        # )
+        time.sleep(3)
+
+        while True:
+
+            try:
+                page_range = (browser
+                              .find_element_by_xpath("//*[contains(@class, 'resultCount')]")
+                              .find_elements_by_xpath('.//strong'))
+            except NoSuchElementException:
+                browser.refresh()
+                time.sleep(3)
+                radio_buttons = browser.find_elements_by_xpath(
+                    "//div[@class='radioButtonBox']")
+                radio_buttons[i].click()
+
+                WebDriverWait(browser, 10, ignored_exceptions=ignored_exceptions).until(
+                    EC.presence_of_element_located(
+                        (By.XPATH,
+                         "//*[contains(@class, 'col-md-8')]//div[@data-test='cell-Reviews-count']")
+                    )
+                )
+                time.sleep(1)
+                page_range = (browser
+                              .find_element_by_xpath("//*[contains(@class, 'resultCount')]")
+                              .find_elements_by_xpath('.//strong'))
+            finally:
+                pages = [i.text for i in page_range]
+
+            # add looping pages feature
+            listings = browser.find_elements_by_xpath(
+                "//*[@class='row d-flex flex-wrap']")
+
+            time.sleep(1)
+            args = []
+            for listing in listings:
+                # pdb.set_trace()
+                arg = scrape_listing(listing)
+                # logger.info((company_name, ratings, industry))
+                # if not all(v is None for v in arg):
+                args.append(arg)
+            # pdb.set_trace()
+
+            write_scraped_to_db(args)
+
+            # pdb.set_trace()
+
+            if pages[1] == pages[2]:
+                logger.info('reaching end, breaking')
+                break
+            else:
+                logger.info('move to next page')
+
+            browser.execute_script(
+                "window.scrollTo(0, document.body.scrollHeight);")
+            next_page_button = browser.find_element_by_xpath(
+                "//button[@aria-label='Next']")
+            next_page_button.click()
+            # time.sleep(uniform(1, 2))
+            WebDriverWait(browser, 10, ignored_exceptions=ignored_exceptions).until(
+                EC.presence_of_element_located(
+                    (By.XPATH,
+                     "//*[contains(@class, 'col-md-8')]//div[@data-test='cell-Reviews-count']")
+                )
+            )
+            time.sleep(uniform(1, 5))
 
 
 def sign_in():
@@ -526,8 +729,7 @@ def sign_in():
     submit_btn.send_keys("\n")
 
     time.sleep(3)
-    browser.get(args.url)
-
+    # browser.get(args.url)
 
 
 def get_browser():
@@ -546,14 +748,14 @@ def get_browser():
 def get_current_page():
     logger.info('Getting current page number')
     try:
-        page_number_elements = browser.find_element_by_css_selector(".eiReviews__EIReviewsPageStyles__pagination").find_elements_by_css_selector("li.pagination__PaginationStyle__page")
-
+        page_number_elements = browser.find_element_by_css_selector(
+            ".eiReviews__EIReviewsPageStyles__pagination").find_elements_by_css_selector("li.pagination__PaginationStyle__page")
 
         for element in page_number_elements:
             if element.get_attribute('class') == "pagination__PaginationStyle__page pagination__PaginationStyle__current":
                 current = int(element.text)
     except selenium.common.exceptions.NoSuchElementException:
-        current = 1 # only one page if page numbers at bottom of page
+        current = 1  # only one page if page numbers at bottom of page
     return current
 
 
@@ -570,40 +772,42 @@ def verify_date_sorting():
             'max_date requires reviews to be sorted ASCENDING by date.')
 
 
-
 def main():
 
     logger.info(f'Scraping up to {args.limit} companies/reviews.')
 
-
     sign_in()
     if args.search_type == "companies":
-        res = pd.DataFrame([], columns = [ "company_name_to_search",
-                                                "company_url",
-                                                "company_name",
-                                                "company_webpage",
-                                                "company_HQ",
-                                                "search_rank",
-                                                "n_reviews"] )
-        res.to_csv(args.file, index = False, encoding='utf-8')
-        for company_to_search in args.search_company_names:
-            try:
-                companies_df = search_for_company(company_to_search)
-            except:
-                companies_df = res
-                companies_df.loc[idx[0]] = [
-                    company_to_search,
-                    np.nan,
-                    np.nan,
-                    np.nan,
-                    np.nan,
-                    np.nan,
-                    np.nan
-                ]
-                
+        if args.loop_education:
+            # loop education sector here
+            loop_education()
+        else:
+            res = pd.DataFrame([], columns=["company_name_to_search",
+                                            "company_url",
+                                            "company_name",
+                                            "company_webpage",
+                                            "company_HQ",
+                                            "search_rank",
+                                            "n_reviews"])
+            res.to_csv(args.file, index=False, encoding='utf-8')
+            for company_to_search in args.search_company_names:
+                try:
+                    companies_df = search_for_company(company_to_search)
+                except:
+                    companies_df = res
+                    companies_df.loc[idx[0]] = [
+                        company_to_search,
+                        np.nan,
+                        np.nan,
+                        np.nan,
+                        np.nan,
+                        np.nan,
+                        np.nan
+                    ]
 
-            companies_df.to_csv(args.file,  index=False, encoding='utf-8', mode='a', header=False)
-            time.sleep(30)
+                companies_df.to_csv(args.file,  index=False,
+                                    encoding='utf-8', mode='a', header=False)
+                time.sleep(30)
 
     else:
         res = pd.DataFrame([], columns=SCHEMA)
@@ -636,7 +840,6 @@ def main():
             res = res.append(reviews_df)
         logger.info(f'Writing {len(res)} reviews to file {args.file}')
         res.to_csv(args.file, index=False, encoding='utf-8')
-    
 
     end = time.time()
     browser.quit()
@@ -644,11 +847,14 @@ def main():
 
 
 if __name__ == '__main__':
+    # browser = get_browser()
+    # main()
     try:
         browser = get_browser()
         page = [1]
         idx = [0]
         date_limit_reached = [False]
         main()
-    except:
-        browser.quit()    
+    except Exception as e:
+        traceback.print_exc(e)
+        browser.quit()
