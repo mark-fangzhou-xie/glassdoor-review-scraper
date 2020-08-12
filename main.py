@@ -20,13 +20,12 @@ Advice to mgmttext
 Ratings for each of 5 categories
 Overall rating
 '''
-import argparse
+# import argparse
 import datetime as dt
 import json
-import logging
+# import logging
 import logging.config
 import os
-import pdb
 import re
 import sqlite3 as lite
 import time
@@ -39,9 +38,13 @@ import numpy as np
 import pandas as pd
 import selenium
 from selenium import webdriver as wd
-from selenium.common.exceptions import (NoSuchElementException,
-                                        StaleElementReferenceException)
+from selenium.common.exceptions import (
+    NoSuchElementException,
+    StaleElementReferenceException,
+    TimeoutException
+)
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -94,6 +97,10 @@ parser.add_argument(
     default=False,
     nargs='+'
 )
+parser.add_argument(
+    '--glassdoor_id',
+    help='Glassdoor company id'
+)
 args = parser.parse_args()
 
 if not args.start_from_url and (args.max_date or args.min_date):
@@ -125,7 +132,6 @@ else:
         --password flags.'
         raise Exception(msg)
 
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 ch = logging.StreamHandler()
@@ -141,7 +147,6 @@ logging.getLogger('selenium').setLevel(logging.CRITICAL)
 
 
 def scrape(field, review, author):
-
     def scrape_date(review):
         return review.find_element_by_tag_name(
             'time').get_attribute('datetime')
@@ -333,7 +338,6 @@ def scrape(field, review, author):
 
 
 def extract_from_page():
-
     def is_featured(review):
         try:
             review.find_element_by_class_name('featuredFlag')
@@ -369,7 +373,7 @@ def extract_from_page():
         idx[0] = idx[0] + 1
 
     if args.max_date and \
-        (pd.to_datetime(res['date'].str.replace(r'\d{2}:\d{2}:\d{2}.*$', '')).max() > args.max_date) or \
+            (pd.to_datetime(res['date'].str.replace(r'\d{2}:\d{2}:\d{2}.*$', '')).max() > args.max_date) or \
             args.min_date and \
             (pd.to_datetime(res['date'].str.replace(r'\d{2}:\d{2}:\d{2}.*$', '')).min() < args.min_date):
         logger.info('Date limit reached, ending process')
@@ -486,7 +490,7 @@ def search_for_company(company_name_to_search):
     type_box.click()
     search_button.click()
 
-    #import pdb;pdb.set_trace()
+    # import pdb;pdb.set_trace()
 
     company_data = pd.DataFrame([], columns=["company_name_to_search",
                                              "company_url",
@@ -539,6 +543,19 @@ def search_for_company(company_name_to_search):
     return company_data
 
 
+def is_exists(review_link, dbname='education_sector.sqlite'):
+    if not os.path.exists(dbname):
+        return False
+    conn = lite.connect(dbname)
+    c = conn.cursor()
+    res = c.execute("""SELECT * FROM `education` WHERE review_link = ?;""",
+                    (review_link,)).fetchone()
+    if len(res) != 0:
+        return True
+    else:
+        return False
+
+
 def write_scraped_to_db(args, dbname='education_sector.sqlite'):
     conn = lite.connect(dbname)
     c = conn.cursor()
@@ -567,6 +584,77 @@ def write_scraped_to_db(args, dbname='education_sector.sqlite'):
 def loop_education():
     "loop over the whole education sector and get their GD id"
 
+    state_names = [
+        "Alaska",
+        "Alabama",
+        "Arkansas",
+        "Arizona",
+        "California",
+        "Colorado",
+        "Connecticut",
+        "District of Columbia",
+        "Delaware",
+        "Florida",
+        "Georgia",
+        "Hawaii",
+        "Iowa",
+        "Idaho",
+        "Illinois",
+        "Indiana",
+        "Kansas",
+        "Kentucky",
+        "Louisiana",
+        "Massachusetts",
+        "Maryland",
+        "Maine",
+        "Michigan",
+        "Minnesota",
+        "Missouri",
+        "Mississippi",
+        "Montana",
+        "North Carolina",
+        "North Dakota",
+        "Nebraska",
+        "New Hampshire",
+        "New Jersey",
+        "New Mexico",
+        "Nevada",
+        "New York",
+        "Ohio",
+        "Oklahoma",
+        "Oregon",
+        "Pennsylvania",  # "Puerto Rico",
+        "Rhode Island",
+        "South Carolina",
+        "South Dakota",
+        "Tennessee",
+        "Texas",
+        "Utah",
+        "Virginia",  # "Virgin Islands",
+        "Vermont",
+        "Washington",
+        "Wisconsin",
+        "West Virginia",
+        "Wyoming"]
+
+    def waiting_element(browser, xpath, multiple=False):
+        "wraps waiting piece"
+        ignored_exceptions = (NoSuchElementException,
+                              StaleElementReferenceException,)
+        if multiple:
+            element = WebDriverWait(browser, 10, ignored_exceptions=ignored_exceptions).until(
+                EC.presence_of_all_elements_located(
+                    (By.XPATH, xpath)
+                )
+            )
+        else:
+            element = WebDriverWait(browser, 10, ignored_exceptions=ignored_exceptions).until(
+                EC.presence_of_element_located(
+                    (By.XPATH, xpath)
+                )
+            )
+        return element
+
     def scrape_item(listing, xpath, attr=None):
         "generic function on getting item within a listing"
         try:
@@ -575,7 +663,7 @@ def loop_education():
             else:
                 item = listing.find_element_by_xpath(xpath).text
             return item
-        except NoSuchElementException:
+        except NoSuchElementException or StaleElementReferenceException:
             # traceback.print_exc(e)
             return None
 
@@ -606,15 +694,34 @@ def loop_education():
         description = scrape_item(listing,
                                   ".//p[@class='employerCard__EmployerCardStyles__clamp common__commonStyles__subtleText']")
         # page
-        logger.info(company_name)
+        # logger.info(company_name)
         arg = (icon_link, review_link, company_name,
                ratings, reviews, salaries,
                jobs, location, company_size,
                industry, description)
         return arg
 
-    ignored_exceptions = (NoSuchElementException,
-                          StaleElementReferenceException,)
+    def get_webpage(browser, state):
+        logger.info(state)
+        browser.refresh()
+        location_input = waiting_element(browser,
+                                         '//*/input[@name="Location"]')
+        # pdb.set_trace()
+        time.sleep(1)
+        location_input.send_keys(Keys.CONTROL + "a")
+        location_input.send_keys(Keys.DELETE)
+        time.sleep(1)
+        location_input.send_keys(state)
+        time.sleep(1)
+        location_input.send_keys(Keys.DOWN)
+        time.sleep(1)
+        location_input.send_keys(Keys.ENTER)
+        time.sleep(1)
+
+        # waiting_element(browser,
+        #                 "//div[@class='radioButtonBox']",
+        #                 multiple=True)[companysizeind].click()
+        # time.sleep(3)
 
     logger.info('getting education')
     # loop over education sector
@@ -622,94 +729,235 @@ def loop_education():
         'https://www.glassdoor.com/Explore/browse-companies.htm'
         '?overall_rating_low=0&page=1&isHiringSurge=0&sgoc=1006'
     )
-    WebDriverWait(browser, 10, ignored_exceptions=ignored_exceptions).until(
-        EC.presence_of_element_located(
-            (By.XPATH,
-             "//*[contains(@class, 'col-md-8')]//div[@data-test='cell-Reviews-count']")
-        )
-    )
+    # browser.implicitly_wait(2)
+    # WebDriverWait(browser, 10, ignored_exceptions=ignored_exceptions).until(
+    #     EC.presence_of_element_located(
+    #         (By.XPATH,
+    #          "//*[contains(@class, 'col-md-8')]//div[@data-test='cell-Reviews-count']")
+    #     )
+    # )
 
-    # time.sleep(2)
+    time.sleep(2)
     # break_signal = False
 
     # page = 1
     # add for loop over company size
 
-    for i in range(7):
-        radio_buttons = browser.find_elements_by_xpath(
-            "//div[@class='radioButtonBox']")
-        radio_buttons[i].click()
+    for state in state_names:
+        # logger.info(state)
+        # browser.refresh()
+        # location_input = waiting_element(browser,
+        #                                  '//*/input[@name="Location"]')
+        # # pdb.set_trace()
+        # time.sleep(1)
+        # location_input.send_keys(Keys.CONTROL + "a")
+        # location_input.send_keys(Keys.DELETE)
+        # time.sleep(1)
+        # location_input.send_keys(state)
+        # time.sleep(1)
+        # location_input.send_keys(Keys.DOWN)
+        # time.sleep(1)
+        # location_input.send_keys(Keys.ENTER)
+        # time.sleep(1)
+
+        # radio_buttons = browser.find_elements_by_xpath(
+        #     "//div[@class='radioButtonBox']")
+        # pdb.set_trace()
+        # radio_buttons[i].click()
         # WebDriverWait(browser, 10, ignored_exceptions=ignored_exceptions).until(
         #     EC.presence_of_element_located(
         #         (By.XPATH,
         #          "//*[contains(@class, 'col-md-8')]//div[@data-test='cell-Reviews-count']")
         #     )
         # )
-        time.sleep(3)
+        # waiting_element(browser,
+        #                 "//*[contains(@class, 'col-md-8')]//div[@data-test='cell-Reviews-count']")
+        # time.sleep(3)
+        # browser.implicitly_wait(3)
+        get_webpage(browser, state)
 
-        while True:
+        for i in range(6, -1, -1):
+            # if i == 5:
+            #     pdb.set_trace()
 
             try:
-                page_range = (browser
-                              .find_element_by_xpath("//*[contains(@class, 'resultCount')]")
-                              .find_elements_by_xpath('.//strong'))
-            except NoSuchElementException:
-                browser.refresh()
+                waiting_element(browser,
+                                "//div[@class='radioButtonBox']",
+                                multiple=True)[i].click()
                 time.sleep(3)
-                radio_buttons = browser.find_elements_by_xpath(
-                    "//div[@class='radioButtonBox']")
-                radio_buttons[i].click()
+                waiting_element(browser,
+                                "//*[contains(@class, 'col-md-8')]//div[@data-test='cell-Reviews-count']")
+            except TimeoutException:
+                browser.refresh()
+                get_webpage(browser, state)
+                waiting_element(browser,
+                                "//div[@class='radioButtonBox']",
+                                multiple=True)[i].click()
+                time.sleep(3)
+            time.sleep(3)
 
-                WebDriverWait(browser, 10, ignored_exceptions=ignored_exceptions).until(
-                    EC.presence_of_element_located(
-                        (By.XPATH,
-                         "//*[contains(@class, 'col-md-8')]//div[@data-test='cell-Reviews-count']")
-                    )
-                )
-                time.sleep(1)
-                page_range = (browser
-                              .find_element_by_xpath("//*[contains(@class, 'resultCount')]")
-                              .find_elements_by_xpath('.//strong'))
-            finally:
-                pages = [i.text for i in page_range]
+            while True:
+                # page_range = (browser
+                #               .find_element_by_xpath("//*[contains(@class, 'resultCount')]")
+                #               .find_elements_by_xpath('.//strong'))
+                # pages = [i.text for i in page_range]
 
-            # add looping pages feature
-            listings = browser.find_elements_by_xpath(
-                "//*[@class='row d-flex flex-wrap']")
+                try:
+                    # page_range = (browser
+                    #               .find_element_by_xpath("//*[contains(@class, 'resultCount')]")
+                    #               .find_elements_by_xpath('.//strong'))
+                    pages = [i.text for i in (waiting_element(browser,
+                                                              "//*[contains(@class, 'resultCount')]")
+                                              .find_elements_by_xpath('.//strong'))]
+                except TimeoutException:
+                    break
+                    browser.refresh()
+                    get_webpage(browser, state)
+                    waiting_element(browser,
+                                    "//div[@class='radioButtonBox']",
+                                    multiple=True)[i].click()
+                    time.sleep(3)
 
-            time.sleep(1)
-            args = []
-            for listing in listings:
+                    # WebDriverWait(browser, 10, ignored_exceptions=ignored_exceptions).until(
+                    #     EC.presence_of_element_located(
+                    #         (By.XPATH,
+                    #          "//*[contains(@class, 'col-md-8')]//div[@data-test='cell-Reviews-count']")
+                    #     )
+                    # )
+                    # time.sleep(1)
+                    pages = [i.text for i in (waiting_element(browser,
+                                                              "//*[contains(@class, 'resultCount')]")
+                                              .find_elements_by_xpath('.//strong'))]
+                # finally:
+                #     pages = [i.text for i in page_range]
+
+                # add looping pages feature
+                try:
+                    listings = waiting_element(
+                        browser, "//*[@class='row d-flex flex-wrap']",
+                        multiple=True)
+                except TimeoutException:
+                    browser.refresh()
+                    get_webpage(browser, state)
+                    waiting_element(browser,
+                                    "//div[@class='radioButtonBox']",
+                                    multiple=True)[i].click()
+                    time.sleep(3)
+                    listings = waiting_element(
+                        browser, "//*[@class='row d-flex flex-wrap']",
+                        multiple=True)
+                # listings = browser.find_elements_by_xpath(
+                #     "//*[@class='row d-flex flex-wrap']")
+
+                # time.sleep(1)
+                # browser.implicitly_wait(1)
+                args = []
+                for listing in listings:
+                    # pdb.set_trace()
+                    try:
+                        arg = scrape_listing(listing)
+                        args.append(arg)
+                    except StaleElementReferenceException:
+                        # browser.refresh()
+                        # get_webpage(browser, state)
+                        # waiting_element(browser,
+                        #                 "//div[@class='radioButtonBox']",
+                        #                 multiple=True)[i].click()
+                        # time.sleep(3)
+                        pass
+                    # if is_exists(arg[1]):
+                    #     break
+                    # logger.info((company_name, ratings, industry))
+                    # if not all(v is None for v in arg):
+
                 # pdb.set_trace()
-                arg = scrape_listing(listing)
-                # logger.info((company_name, ratings, industry))
-                # if not all(v is None for v in arg):
-                args.append(arg)
-            # pdb.set_trace()
 
-            write_scraped_to_db(args)
+                write_scraped_to_db(args)
 
-            # pdb.set_trace()
+                # pdb.set_trace()
 
-            if pages[1] == pages[2]:
-                logger.info('reaching end, breaking')
-                break
-            else:
-                logger.info('move to next page')
+                if len(pages) == 1 or pages[0] == '0' or pages[1] == pages[2]:
+                    logger.info('reaching end, breaking')
+                    break
+                else:
+                    logger.info(('chunk', i, pages[0], pages[1], pages[2]))
 
-            browser.execute_script(
-                "window.scrollTo(0, document.body.scrollHeight);")
-            next_page_button = browser.find_element_by_xpath(
-                "//button[@aria-label='Next']")
-            next_page_button.click()
-            # time.sleep(uniform(1, 2))
-            WebDriverWait(browser, 10, ignored_exceptions=ignored_exceptions).until(
-                EC.presence_of_element_located(
-                    (By.XPATH,
-                     "//*[contains(@class, 'col-md-8')]//div[@data-test='cell-Reviews-count']")
-                )
-            )
-            time.sleep(uniform(1, 5))
+                browser.execute_script(
+                    "window.scrollTo(0, document.body.scrollHeight);")
+                next_page_button = waiting_element(browser,
+                                                   "//button[@aria-label='Next']")
+                # browser.find_element_by_xpath(
+                #     "//button[@aria-label='Next']")
+                next_page_button.click()
+                # browser.implicitly_wait(2)
+                # time.sleep(uniform(1, 2))
+                # WebDriverWait(browser, 10, ignored_exceptions=ignored_exceptions).until(
+                #     EC.presence_of_element_located(
+                #         (By.XPATH,
+                #          "//*[contains(@class, 'col-md-8')]//div[@data-test='cell-Reviews-count']")
+                #     )
+                # )
+                time.sleep(3)
+                time.sleep(uniform(0.1, 4))
+
+
+def get_basic_info(glassdoor_id):
+    def write_to_db(arg, dbname='education_sector.sqlite'):
+        conn = lite.connect(dbname)
+        c = conn.cursor()
+        # language=SQL
+        c.execute("""CREATE TABLE IF NOT EXISTS company_info (
+        glassdoor_id INT,
+        overview_link TEXT,
+        website TEXT,
+        headquarters TEXT,
+        size TEXT,
+        founded TEXT,
+        type TEXT,
+        industry TEXT,
+        revenue TEXT,
+        primary key (glassdoor_id));""")
+        # language=SQL
+        c.execute("""INSERT OR IGNORE INTO company_info VALUES (?,?,?,?,?,?,?,?,?);""", arg)
+        conn.commit()
+        conn.close()
+
+    # TODO: get basic information of companies
+    browser.get(args.url)
+    time.sleep(1)
+    # pdb.set_trace()
+    overview_icon = browser.find_element_by_xpath('//*[@data-label="Overview"]')
+    time.sleep(1)
+    overview_link = overview_icon.get_attribute('href')
+    browser.get(overview_link)
+    time.sleep(3)
+    # pdb.set_trace()
+    basic_info = browser.find_element_by_xpath("//*/div[@class='info flexbox row col-hh']")
+    # entity_dict = {'glassdoor_id': glassdoor_id}
+    # entity_dict = {}
+    entities = basic_info.find_elements_by_xpath('.//div[@class="infoEntity"]')
+    # TODO: get company information correctly
+    entity_dict = {e.find_element_by_xpath('.//label').text: e.find_element_by_xpath('.//span').text
+                   for e in entities}
+    # for entity in entities:
+    #     if entity['class'] == 'value website':
+    #         entity_dict['Website'] = entity.find_element_by_xpath('.//span').text
+    #     else:
+    #         key = entity.find_element_by_xpath('.//label').text
+    #         value = entity.find_element_by_xpath('.//span[class="value"]')
+    #         entity_dict[key] = value
+    # return entity_dict
+    arg = (glassdoor_id,
+           overview_link,
+           entity_dict.get('Website'),
+           entity_dict.get('Headquarters'),
+           entity_dict.get('Size'),
+           entity_dict.get('Founded'),
+           entity_dict.get('Type'),
+           entity_dict.get('Industry'),
+           entity_dict.get('Revenue')
+           )
+    write_to_db(arg)
 
 
 def sign_in():
@@ -749,10 +997,12 @@ def get_current_page():
     logger.info('Getting current page number')
     try:
         page_number_elements = browser.find_element_by_css_selector(
-            ".eiReviews__EIReviewsPageStyles__pagination").find_elements_by_css_selector("li.pagination__PaginationStyle__page")
+            ".eiReviews__EIReviewsPageStyles__pagination").find_elements_by_css_selector(
+            "li.pagination__PaginationStyle__page")
 
         for element in page_number_elements:
-            if element.get_attribute('class') == "pagination__PaginationStyle__page pagination__PaginationStyle__current":
+            if element.get_attribute(
+                    'class') == "pagination__PaginationStyle__page pagination__PaginationStyle__current":
                 current = int(element.text)
     except selenium.common.exceptions.NoSuchElementException:
         current = 1  # only one page if page numbers at bottom of page
@@ -760,9 +1010,10 @@ def get_current_page():
 
 
 def verify_date_sorting():
+    # import pdb
+    # pdb.set_trace()
     logger.info('Date limit specified, verifying date sorting')
-    ascending = urllib.parse.parse_qs(
-        args.url)['sort.ascending'] == ['true']
+    ascending = urllib.parse.parse_qs(args.url)['sort.ascending'] == ['true']
 
     if args.min_date and ascending:
         raise Exception(
@@ -773,7 +1024,6 @@ def verify_date_sorting():
 
 
 def main():
-
     logger.info(f'Scraping up to {args.limit} companies/reviews.')
 
     sign_in()
@@ -805,12 +1055,17 @@ def main():
                         np.nan
                     ]
 
-                companies_df.to_csv(args.file,  index=False,
+                companies_df.to_csv(args.file, index=False,
                                     encoding='utf-8', mode='a', header=False)
                 time.sleep(30)
 
     else:
         res = pd.DataFrame([], columns=SCHEMA)
+
+        if args.start_from_url:
+            get_basic_info(args.glassdoor_id)
+
+        # pdb.set_trace()
         if not args.start_from_url:
             reviews_exist = navigate_to_reviews()
             if not reviews_exist:
@@ -832,8 +1087,8 @@ def main():
 
         # import pdb;pdb.set_trace()
 
-        while more_pages() and\
-                len(res) + 1 < args.limit and\
+        while more_pages() and \
+                len(res) + 1 < args.limit and \
                 not date_limit_reached[0]:
             go_to_next_page()
             reviews_df = extract_from_page()
@@ -857,4 +1112,5 @@ if __name__ == '__main__':
         main()
     except Exception as e:
         traceback.print_exc(e)
+    finally:
         browser.quit()
