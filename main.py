@@ -909,6 +909,7 @@ def get_basic_info(glassdoor_id):
         c.execute("""CREATE TABLE IF NOT EXISTS company_info (
         glassdoor_id INT,
         overview_link TEXT,
+        CEO TEXT,
         website TEXT,
         headquarters TEXT,
         size TEXT,
@@ -918,15 +919,22 @@ def get_basic_info(glassdoor_id):
         revenue TEXT,
         primary key (glassdoor_id));""")
         # language=SQL
-        c.execute("""INSERT OR IGNORE INTO company_info VALUES (?,?,?,?,?,?,?,?,?);""", arg)
+        c.execute("""INSERT OR IGNORE INTO company_info VALUES (?,?,?,?,?,?,?,?,?,?);""", arg)
         conn.commit()
         conn.close()
 
     # TODO: get basic information of companies
     browser.get(args.url)
     time.sleep(1)
+    # TODO: get CEO name
+    ceo_name_box = browser.find_element_by_xpath("//*[contains(@class, 'pl-lg-sm')]")
+    time.sleep(1)
+    try:
+        ceo_name = ceo_name_box.find_element_by_xpath(".//div").text
+    except:
+        ceo_name = None
     # pdb.set_trace()
-    overview_icon = browser.find_element_by_xpath('//*[@data-label="Overview"]')
+    overview_icon = browser.find_element_by_xpath("//*[contains(@class, 'overviews')]")
     time.sleep(1)
     overview_link = overview_icon.get_attribute('href')
     browser.get(overview_link)
@@ -949,6 +957,7 @@ def get_basic_info(glassdoor_id):
     # return entity_dict
     arg = (glassdoor_id,
            overview_link,
+           ceo_name,
            entity_dict.get('Website'),
            entity_dict.get('Headquarters'),
            entity_dict.get('Size'),

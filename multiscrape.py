@@ -51,7 +51,8 @@ subset_page_df = links[~links["glassdoor_id"].isin(already_scraped_ids)][
 
 for index, row in subset_page_df.iterrows():
     # TODO: url needs to be sorted review links
-    command = 'python main.py --headless --limit 999999 --search_type reviews --min_date 2019-09-01 ' + \
+    # --headless
+    command = 'python main.py --limit 999999 --headless --search_type reviews --min_date 2019-09-01 ' + \
               '--glassdoor_id ' + row['glassdoor_id'] + \
               ' --start_from_url --url "' + \
               row["review_link_sorted"] + '" -f data/' + str(row["glassdoor_id"]) + '.csv'
