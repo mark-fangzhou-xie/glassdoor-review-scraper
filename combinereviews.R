@@ -23,3 +23,6 @@ data <- furrr::future_map(files,
 # vroom offers faster data reading than readr
 #data <- vroom::vroom(files)
 vroom::vroom_write(data, "reviews_education.csv")
+
+# match company id
+# str_extract("E1343/12/jlkj124", "(?<=E)[0-9]+")
